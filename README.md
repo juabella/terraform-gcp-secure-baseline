@@ -1,55 +1,115 @@
 # terraform-gcp-secure-baseline
 
-[![CI/CD](https://github.com/yourusername/terraform-gcp-secure-baseline/actions/workflows/ci.yml/badge.svg)](https://github.com/yourusername/terraform-gcp-secure-baseline/actions/workflows/ci.yml)
-[![License](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
-[![Terraform](https://img.shields.io/badge/Terraform-≥1.5.0-623CE4.svg)](https://www.terraform.io)
-[![Checkov](https://img.shields.io/badge/Checkov-Passing-007EC6.svg)](https://www.checkov.io)
+[![CI](https://github.com/juabella/terraform-gcp-secure-baseline/actions/workflows/ci.yml/badge.svg)](https://github.com/juabella/terraform-gcp-secure-baseline/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
-Production-ready, security-hardened Terraform modules for Google Cloud Platform. Built by a Senior Cloud Architect with 15+ years of enterprise infrastructure experience. 
+A Terraform module that creates a Google Cloud VPC with secure defaults: custom subnets only, Private Google Access, and VPC Flow Logs turned on by default.
 
-This open-core repository provides the foundational **VPC and IAM baseline**. For advanced modules (Hardened GKE, Centralized Logging, CIS Benchmark enforcement, and multi-environment CI/CD pipelines), check out the **[Pro Library](https://your-landing-page.com)**.
+This is the free starting point for a planned set of GCP modules aimed at teams that have to answer to security reviewers and auditors. See the [Roadmap](#roadmap).
 
-## 🛡️ Security & Compliance Mapping
-This module is designed to align with industry security standards out of the box:
+## What the module does
 
-| Control Area | CIS GCP Benchmark v3.0.0 | Description |
-| :--- | :---: | :--- |
-| **Network Isolation** | 3.1, 3.2 | VPC configured with private Google access; no default internet gateways. |
-| **IAM Least Privilege** | 1.1, 1.4 | Custom roles enforced; no primitive Owner/Editor roles granted. |
-| **Encryption** | 4.1 | CMEK (Customer-Managed Encryption Keys) ready structure. |
-| **Logging** | 6.1, 6.2 | VPC Flow Logs and Admin Activity logs enabled by default. |
+- Creates a VPC with `auto_create_subnetworks = false`, so no subnets exist that you did not define
+- Creates the subnets you list, each with Private Google Access enabled by default
+- Enables VPC Flow Logs on every subnet by default (10-minute aggregation, 50% sampling, all metadata)
+- Supports secondary IP ranges per subnet, for example GKE pod and service ranges
+- Adds a firewall rule that allows traffic from private (RFC 1918) address ranges
+- Deletes the default route to the internet that GCP creates automatically, unless you turn that off (see [Behavior notes](#behavior-notes))
 
-## 🚀 Quick Start
+## What it does not do
 
-### Prerequisites
-- Terraform >= 1.5.0
-- GCP Service Account with `roles/compute.networkAdmin` and `roles/iam.securityAdmin`
-- Authentication configured (e.g., `gcloud auth application-default login`)
+This module covers the network layer only. It does not manage IAM, GKE, logging sinks, encryption keys (CMEK), organization policies, or VPC Service Controls. Some of these are planned; none exist yet.
 
-### Usage Example
+Using this module does not make your environment compliant with any standard. It is designed to support secure-by-default network configuration, and you remain responsible for your own security and compliance review.
+
+## Requirements
+
+| Name | Version |
+| --- | --- |
+| Terraform | >= 1.5.0 |
+| google provider | >= 5.0.0, < 6.0.0 |
+
+## Quick start
 
 ```hcl
-module "secure_vpc" {
-  source  = "github.com/yourusername/terraform-gcp-secure-baseline//modules/vpc"
-  version = "1.0.0"
+module "vpc" {
+  source = "github.com/juabella/terraform-gcp-secure-baseline//modules/vpc?ref=v0.1.0"
 
-  project_id  = "my-gcp-project"
-  network_name = "prod-secure-vpc"
-  region      = "us-central1"
+  project_id   = "my-gcp-project"
+  network_name = "example-secure-vpc"
+  region       = "us-central1"
 
-  # Security defaults (can be overridden, but not recommended)
-  enable_private_google_access = true
-  enable_vpc_flow_logs         = true
-  subnet_names                 = ["app-subnet", "db-subnet"]
-  subnet_ip_cidr_ranges        = ["10.0.1.0/24", "10.0.2.0/24"]
+  subnets = [
+    {
+      subnet_name = "app-subnet"
+      subnet_ip   = "10.10.1.0/24"
+      secondary_ranges = [
+        { range_name = "pods", ip_cidr_range = "10.10.10.0/24" },
+        { range_name = "services", ip_cidr_range = "10.10.20.0/24" },
+      ]
+    },
+    {
+      subnet_name = "db-subnet"
+      subnet_ip   = "10.10.2.0/24"
+    },
+  ]
 }
+```
 
-module "iam_baseline" {
-  source  = "github.com/yourusername/terraform-gcp-secure-baseline//modules/iam"
-  version = "1.0.0"
+A complete runnable example is in [`examples/basic-vpc`](examples/basic-vpc). Replace the placeholder project ID with a sandbox project and run `terraform plan` before applying anything.
 
-  project_id = "my-gcp-project"
-  
-  # Enforce least privilege
-  disable_default_service_accounts = true
-}
+## Inputs
+
+| Name | Description | Type | Default | Required |
+| --- | --- | --- | --- | --- |
+| `project_id` | The GCP project ID where the VPC is created. | `string` | n/a | yes |
+| `network_name` | Name of the VPC network. | `string` | `"secure-vpc"` | no |
+| `region` | Default region for subnets that do not set their own. | `string` | `"us-central1"` | no |
+| `subnets` | List of subnet objects: `subnet_name`, `subnet_ip`, optional `subnet_region`, `subnet_private_access` (default `true`), `description`, and `secondary_ranges`. | `list(object)` | `[]` | no |
+| `enable_flow_logs` | Enable VPC Flow Logs on all subnets. | `bool` | `true` | no |
+| `delete_default_internet_gateway_routes` | Delete the default internet route GCP creates with a new network. | `bool` | `true` | no |
+
+## Outputs
+
+| Name | Description |
+| --- | --- |
+| `network_name` | Name of the VPC network. |
+| `network_self_link` | URI of the VPC network. |
+| `subnet_self_links` | Map of subnet names to their self links. |
+| `subnet_names` | List of created subnet names. |
+
+## Behavior notes
+
+- **No default internet route.** With the default setting, the VPC has no route to the internet. Features that depend on that route, such as Cloud NAT and Private Google Access, need routes you add yourself. Check Google's documentation for the routes your setup requires, or set `delete_default_internet_gateway_routes = false` to keep GCP's default behavior.
+- **Flow logs cost money.** VPC Flow Logs generate Cloud Logging volume. Set `enable_flow_logs = false` if you do not want them.
+- **The internal firewall rule is intentionally simple.** It allows traffic from private address ranges. Review it and tighten it for your environment.
+
+## Testing
+
+GitHub Actions runs on every push and pull request:
+
+1. `terraform fmt -check`
+2. `terraform validate` on the module and the example
+3. TFLint on the module and the example
+4. Checkov security scan
+
+Any Checkov checks that are skipped are listed in [`.checkov.yaml`](.checkov.yaml) with the reason. CI validates and lints the code. It does not deploy to a live GCP project, so test in your own sandbox first.
+
+## Roadmap
+
+Planned, not yet released, and with no dates:
+
+- IAM baseline module
+- Hardened GKE module
+- Centralized logging module
+- Policy checks and CI/CD templates
+
+If you want these, or want to tell me what your team needs most, join the early-access list: [LANDING_PAGE_URL](LANDING_PAGE_URL)
+
+## Contributing and support
+
+Issues and pull requests are welcome. This is maintained on a best-effort basis, with no guaranteed response time.
+
+## License
+
+[MIT](LICENSE)
