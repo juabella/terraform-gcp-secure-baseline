@@ -104,7 +104,7 @@ Planned, not yet released, and with no dates:
 - Centralized logging module
 - Policy checks and CI/CD templates
 
-If you want these, or want to tell me what your team needs most, join the early-access list: [LANDING_PAGE_URL](LANDING_PAGE_URL)
+If you want these, or want to tell me what your team needs most, join the early-access list: [https://secure-gcp-foundations.beehiiv.com](https://secure-gcp-foundations.beehiiv.com)
 
 ## Contributing and support
 
