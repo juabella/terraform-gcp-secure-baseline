@@ -12,8 +12,9 @@ skip-check:
   # CKV_GCP_62: Internal firewall allows all protocols within RFC1918 ranges.
   # This is intentional for internal VPC communication; external access is blocked.
   - CKV_GCP_62
-  # CKV_GCP_28: Ensure GCP subnet has a private IP google access.
+  
+  # CKV_GCP_74: Ensure that private_ip_google_access is enabled for Subnet.
   # FALSE POSITIVE: Checkov static analysis cannot resolve variable defaults 
   # inside dynamic for_each loops. The variable 'subnet_private_access' defaults to true.
-  - CKV_GCP_28
+  - CKV_GCP_74
 soft-fail: false
